@@ -480,12 +480,28 @@ function adjustSpacing(xml, cfg) {
 function setNarrowMargins(xml) {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   const NARROW = 720; // 1.27cm in twips — Word's "Narrow" preset
+
+  // Find the largest negative table indent so we don't push tables off-page
+  let maxNegIndent = 0;
+  for (const ind of doc.getElementsByTagNameNS(W, 'tblInd')) {
+    const val = parseFloat(ind.getAttributeNS(W, 'w') || '0');
+    if (val < 0) maxNegIndent = Math.max(maxNegIndent, Math.abs(val));
+  }
+
   for (const m of doc.getElementsByTagNameNS(W, 'pgMar')) {
     for (const side of ['top', 'bottom', 'left', 'right']) {
       const current = m.getAttributeNS(W, side);
-      // Only narrow down, never widen margins that are already smaller
-      if (current && parseInt(current) > NARROW) {
-        m.setAttributeNS(W, 'w:' + side, String(NARROW));
+      if (!current) continue;
+      const curVal = parseInt(current);
+
+      // For left/right: don't go below the negative table indent + a small buffer
+      let minMargin = NARROW;
+      if ((side === 'left' || side === 'right') && maxNegIndent > 0) {
+        minMargin = Math.max(NARROW, maxNegIndent + 100);
+      }
+
+      if (curVal > minMargin) {
+        m.setAttributeNS(W, 'w:' + side, String(minMargin));
       }
     }
   }
