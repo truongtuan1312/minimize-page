@@ -425,7 +425,28 @@ function scaleImages(xml, scale) {
 function adjustSpacing(xml, cfg) {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
 
-  // Also process paragraphs inside table cells
+  // Remove empty paragraphs (no text, no images, no other content)
+  const toRemove = [];
+  for (const p of doc.getElementsByTagNameNS(W, 'p')) {
+    const hasText = Array.from(p.getElementsByTagNameNS(W, 't')).some(t => t.textContent.trim());
+    const hasDrawing = p.getElementsByTagNameNS(W, 'drawing').length > 0;
+    const hasBreak = p.getElementsByTagNameNS(W, 'br').length > 0;
+    // Keep paragraphs inside table cells (they define the cell even if empty)
+    let inTable = false;
+    let node = p.parentNode;
+    while (node) { if (node.localName === 'tc') { inTable = true; break; } node = node.parentNode; }
+    // Keep section break paragraphs
+    const pPr = p.getElementsByTagNameNS(W, 'pPr')[0];
+    const hasSectPr = pPr && pPr.getElementsByTagNameNS(W, 'sectPr').length > 0;
+
+    if (!hasText && !hasDrawing && !hasBreak && !inTable && !hasSectPr) {
+      toRemove.push(p);
+    }
+  }
+  for (const p of toRemove) {
+    p.parentNode.removeChild(p);
+  }
+
   const allParagraphs = doc.getElementsByTagNameNS(W, 'p');
   for (const p of allParagraphs) {
     let pPr = p.getElementsByTagNameNS(W, 'pPr')[0];
