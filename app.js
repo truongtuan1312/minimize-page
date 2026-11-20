@@ -90,7 +90,7 @@ $('processBtn').addEventListener('click', async () => {
 
     $('status').innerHTML = `<div class="processing"><span class="spinner"></span>Analyzing and minimizing&hellip;</div>`;
 
-    const applied = await smartMinimize(zip);
+    const applied = await smartMinimize(zip, pages, target);
 
     resultBlob = await generateBlob(zip);
     showSmartResult(pages, target, applied);
@@ -104,7 +104,7 @@ $('processBtn').addEventListener('click', async () => {
   $('processBtn').disabled = false;
 });
 
-async function smartMinimize(zip) {
+async function smartMinimize(zip, currentPages, targetPages) {
   const applied = [];
 
   // --- 1. Remove empty paragraphs ---
@@ -236,8 +236,11 @@ async function smartMinimize(zip) {
     if (changed) applied.push('Optimize margins');
   });
 
-  // --- 5. Scale images in document body (not headers) by 5% ---
+  // --- 5. Scale images based on page reduction ratio ---
   {
+    const pageRatio = targetPages / currentPages;
+    const imgScale = Math.max(0.5, Math.min(0.95, pageRatio));
+
     const docXml = await zip.file('word/document.xml').async('string');
     const doc = new DOMParser().parseFromString(docXml, 'application/xml');
     let hasImages = false;
@@ -246,8 +249,8 @@ async function smartMinimize(zip) {
       for (const ext of doc.getElementsByTagNameNS(ns, 'extent')) {
         const cx = ext.getAttribute('cx');
         const cy = ext.getAttribute('cy');
-        if (cx) { ext.setAttribute('cx', String(Math.round(parseInt(cx) * 0.95))); hasImages = true; }
-        if (cy) ext.setAttribute('cy', String(Math.round(parseInt(cy) * 0.95)));
+        if (cx) { ext.setAttribute('cx', String(Math.round(parseInt(cx) * imgScale))); hasImages = true; }
+        if (cy) ext.setAttribute('cy', String(Math.round(parseInt(cy) * imgScale)));
       }
     }
 
@@ -256,13 +259,13 @@ async function smartMinimize(zip) {
       if (ext) {
         const cx = ext.getAttribute('cx');
         const cy = ext.getAttribute('cy');
-        if (cx) ext.setAttribute('cx', String(Math.round(parseInt(cx) * 0.95)));
-        if (cy) ext.setAttribute('cy', String(Math.round(parseInt(cy) * 0.95)));
+        if (cx) ext.setAttribute('cx', String(Math.round(parseInt(cx) * imgScale)));
+        if (cy) ext.setAttribute('cy', String(Math.round(parseInt(cy) * imgScale)));
       }
     }
 
     zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
-    if (hasImages) applied.push('Scale images (5%)');
+    if (hasImages) applied.push(`Scale images (${Math.round((1 - imgScale) * 100)}%)`);
   }
 
   return applied;
