@@ -10,6 +10,7 @@ let resultName = '';
 const $ = (id) => document.getElementById(id);
 
 const dz = $('dropZone');
+dz.addEventListener('click', () => $('fileInput').click());
 dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag-over'); });
 dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
 dz.addEventListener('drop', (e) => {
