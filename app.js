@@ -1,36 +1,13 @@
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-
-// Line values in 240ths of a point (240 = single, 276 = 1.15 default)
 const WP = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
 const WP14 = 'http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing';
-
-// lineVal: 240ths of a point (240=single, 276=1.15 default)
-// imgScale: scale factor for images (1.0 = no change)
-// narrow: set all margins to Word's "Narrow" preset (1.27cm = 720 twips)
-const LEVELS = [
-  { lineVal: 268, spaceFactor: 0.88, narrow: false, imgScale: 0.95 },
-  { lineVal: 256, spaceFactor: 0.75, narrow: false, imgScale: 0.90 },
-  { lineVal: 240, spaceFactor: 0.60, narrow: true,  imgScale: 0.85 },
-  { lineVal: 228, spaceFactor: 0.45, narrow: true,  imgScale: 0.80 },
-  { lineVal: 216, spaceFactor: 0.30, narrow: true,  imgScale: 0.75 },
-  { lineVal: 204, spaceFactor: 0.18, narrow: true,  imgScale: 0.70 },
-  { lineVal: 192, spaceFactor: 0.10, narrow: true,  imgScale: 0.65 },
-];
+const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 
 let currentFile = null;
-let selectedLevel = 'auto';
 let resultBlob = null;
 let resultName = '';
 
 const $ = (id) => document.getElementById(id);
-
-$('levelSelector').addEventListener('click', (e) => {
-  const btn = e.target.closest('.level-btn');
-  if (!btn) return;
-  $('levelSelector').querySelectorAll('.level-btn').forEach((b) => b.classList.remove('active'));
-  btn.classList.add('active');
-  selectedLevel = btn.dataset.level;
-});
 
 const dz = $('dropZone');
 dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag-over'); });
@@ -56,7 +33,12 @@ function handleFile(file) {
   dz.hidden = true;
   $('fileCard').hidden = false;
   $('fileCard').innerHTML = `<div class="file-info">
-    <span class="file-icon">&#128196;</span>
+    <div class="file-icon-wrap">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+      </svg>
+    </div>
     <div class="file-details">
       <div class="file-name">${esc(file.name)}</div>
       <div class="file-size">${fmtSize(file.size)}</div>
@@ -87,10 +69,12 @@ $('processBtn').addEventListener('click', async () => {
     $('status').innerHTML = '<div class="result warning"><div class="result-title">Enter the current page count</div></div>';
     return;
   }
-  if (pages % 2 === 0) {
+  const sparseLastPage = $('sparseLastPage').checked;
+
+  if (pages % 2 === 0 && !sparseLastPage) {
     $('status').innerHTML = `<div class="result success">
       <div class="result-title">Already even</div>
-      <div class="result-detail">${pages} pages is already even — no changes needed.</div>
+      <div class="result-detail">${pages} pages is already even — no changes needed. If the last page is mostly empty, enable "Last page is mostly empty" to try removing it.</div>
     </div>`;
     return;
   }
@@ -101,39 +85,15 @@ $('processBtn').addEventListener('click', async () => {
   try {
     const buf = await currentFile.arrayBuffer();
     const target = pages - 1;
+    const zip = await JSZip.loadAsync(buf);
 
-    if (selectedLevel !== 'auto') {
-      const level = parseInt(selectedLevel) - 1;
-      $('status').innerHTML = `<div class="processing"><span class="spinner"></span>Applying level ${level + 1}&hellip;</div>`;
-      const zip = await JSZip.loadAsync(buf);
-      await applyReduction(zip, LEVELS[level]);
-      resultBlob = await generateBlob(zip);
-      showResult(pages, target, level + 1);
-    } else {
-      // Iterative: try each level, estimate page count, stop when target reached
-      let appliedLevel = 0;
-      for (let i = 0; i < LEVELS.length; i++) {
-        appliedLevel = i + 1;
-        $('status').innerHTML = `<div class="processing"><span class="spinner"></span>Trying level ${appliedLevel}/${LEVELS.length}&hellip;</div>`;
+    $('status').innerHTML = `<div class="processing"><span class="spinner"></span>Analyzing and minimizing&hellip;</div>`;
 
-        const zip = await JSZip.loadAsync(buf);
-        await applyReduction(zip, LEVELS[i]);
+    const applied = await smartMinimize(zip);
 
-        const estimated = await estimatePages(zip, pages);
-        if (estimated <= target) {
-          resultBlob = await generateBlob(zip);
-          showResult(pages, target, appliedLevel, estimated);
-          $('processBtn').disabled = false;
-          return;
-        }
-      }
+    resultBlob = await generateBlob(zip);
+    showSmartResult(pages, target, applied);
 
-      // Max level reached but still not enough — use last result
-      const zip = await JSZip.loadAsync(buf);
-      await applyReduction(zip, LEVELS[LEVELS.length - 1]);
-      resultBlob = await generateBlob(zip);
-      showResult(pages, target, appliedLevel, null, true);
-    }
   } catch (err) {
     $('status').innerHTML = `<div class="result warning">
       <div class="result-title">Processing error</div>
@@ -143,157 +103,215 @@ $('processBtn').addEventListener('click', async () => {
   $('processBtn').disabled = false;
 });
 
-function showResult(original, target, level, estimated, maxReached) {
-  const base = currentFile.name.replace(/\.docx$/i, '');
-  resultName = base + '_minimized.docx';
+async function smartMinimize(zip) {
+  const applied = [];
 
-  const expandTarget = original + 1; // next even number above
-
-  if (maxReached) {
-    $('status').innerHTML = `<div class="result warning">
-      <div class="result-title">Max reduction applied (level ${level})</div>
-      <div class="result-pages">
-        <span class="page-badge">${original} pp</span>
-        <span class="arrow">&rarr;</span>
-        <span class="page-badge">${target} pp (target)</span>
-      </div>
-      <div class="result-detail">
-        Spacing is already at the tightest level but the content may not fit in ${target} pages.
-        You can still download and check in Word, or expand to <strong>${expandTarget} pages</strong> instead — the spacing will be loosened so it reads more comfortably.
-      </div>
-      <button class="btn-expand" id="expandBtn">Expand to ${expandTarget} pages instead</button>
-    </div>`;
-    setTimeout(() => {
-      const eb = $('expandBtn');
-      if (eb) eb.addEventListener('click', () => expandToEven(original, expandTarget));
-    }, 0);
-  } else {
-    $('status').innerHTML = `<div class="result success">
-      <div class="result-title">Level ${level} applied${estimated ? ' — estimated ' + estimated + ' pp' : ''}</div>
-      <div class="result-pages">
-        <span class="page-badge">${original} pp</span>
-        <span class="arrow">&rarr;</span>
-        <span class="page-badge">${target} pp (target)</span>
-      </div>
-      <div class="result-detail">Open the file in Word to verify. All content is preserved; only spacing was adjusted.</div>
-    </div>`;
-  }
-  $('resultArea').innerHTML = `<button class="btn-download" id="downloadBtn">&#8595; Download ${esc(resultName)}</button>`;
-  $('downloadBtn').addEventListener('click', doDownload);
-}
-
-async function estimatePages(zip, originalPages) {
-  const docXml = await zip.file('word/document.xml').async('string');
-  const doc = new DOMParser().parseFromString(docXml, 'application/xml');
-
-  // Gather section properties for page dimensions
-  const sectPrs = doc.getElementsByTagNameNS(W, 'sectPr');
-  let pageHeight = 15840; // A4 default in twips
-  let topMargin = 1440;
-  let bottomMargin = 1440;
-
-  if (sectPrs.length > 0) {
-    const sect = sectPrs[sectPrs.length - 1];
-    const pgSz = sect.getElementsByTagNameNS(W, 'pgSz')[0];
-    const pgMar = sect.getElementsByTagNameNS(W, 'pgMar')[0];
-    if (pgSz) {
-      const h = pgSz.getAttributeNS(W, 'h');
-      if (h) pageHeight = parseInt(h);
+  // --- 1. Remove empty paragraphs ---
+  await transformDocXml(zip, (doc) => {
+    const toRemove = [];
+    for (const p of doc.getElementsByTagNameNS(W, 'p')) {
+      const hasText = Array.from(p.getElementsByTagNameNS(W, 't')).some(t => t.textContent.trim());
+      const hasDrawing = p.getElementsByTagNameNS(W, 'drawing').length > 0;
+      const hasBreak = p.getElementsByTagNameNS(W, 'br').length > 0;
+      let inTable = false;
+      let node = p.parentNode;
+      while (node) { if (node.localName === 'tc') { inTable = true; break; } node = node.parentNode; }
+      const pPr = p.getElementsByTagNameNS(W, 'pPr')[0];
+      const hasSectPr = pPr && pPr.getElementsByTagNameNS(W, 'sectPr').length > 0;
+      if (!hasText && !hasDrawing && !hasBreak && !inTable && !hasSectPr) toRemove.push(p);
     }
-    if (pgMar) {
-      const t = pgMar.getAttributeNS(W, 'top');
-      const b = pgMar.getAttributeNS(W, 'bottom');
-      if (t) topMargin = parseInt(t);
-      if (b) bottomMargin = parseInt(b);
+    if (toRemove.length > 0) {
+      for (const p of toRemove) p.parentNode.removeChild(p);
+      applied.push('Remove empty paragraphs');
     }
-  }
+  });
 
-  const usableHeight = pageHeight - topMargin - bottomMargin;
-
-  // Measure total content height from paragraph spacing
-  let totalHeight = 0;
-  const paras = doc.getElementsByTagNameNS(W, 'p');
-  const pageWidth = 12240; // A4 width default
-  let leftMargin = 1440, rightMargin = 1440;
-  if (sectPrs.length > 0) {
-    const pgMar = sectPrs[sectPrs.length - 1].getElementsByTagNameNS(W, 'pgMar')[0];
-    if (pgMar) {
-      const l = pgMar.getAttributeNS(W, 'left');
-      const r = pgMar.getAttributeNS(W, 'right');
-      if (l) leftMargin = parseInt(l);
-      if (r) rightMargin = parseInt(r);
-    }
-  }
-  const usableWidth = pageWidth - leftMargin - rightMargin;
-
-  for (const p of paras) {
-    const pPr = p.getElementsByTagNameNS(W, 'pPr')[0];
-    let lineSpacing = 276; // default 1.15 in 240ths
-    let spaceBefore = 0;
-    let spaceAfter = 160; // default 8pt after
-    let fontSize = 22; // 11pt in half-points
-
-    if (pPr) {
-      const sp = pPr.getElementsByTagNameNS(W, 'spacing')[0];
-      if (sp) {
-        const line = sp.getAttributeNS(W, 'line');
-        if (line) lineSpacing = parseInt(line);
-        const bef = sp.getAttributeNS(W, 'before');
-        if (bef) spaceBefore = parseInt(bef);
-        const aft = sp.getAttributeNS(W, 'after');
-        if (aft) spaceAfter = parseInt(aft);
-      }
-    }
-
-    // Check run-level font sizes (more reliable than pPr/rPr)
-    for (const r of p.getElementsByTagNameNS(W, 'r')) {
-      const rPr = r.getElementsByTagNameNS(W, 'rPr')[0];
-      if (rPr) {
-        const sz = rPr.getElementsByTagNameNS(W, 'sz')[0];
-        if (sz) {
-          const val = sz.getAttributeNS(W, 'val');
-          if (val) { fontSize = parseInt(val); break; }
+  // --- 2. Compact table rows: remove atLeast heights, set to auto-fit ---
+  await transformDocXml(zip, (doc) => {
+    let changed = false;
+    for (const trPr of doc.getElementsByTagNameNS(W, 'trPr')) {
+      const trH = trPr.getElementsByTagNameNS(W, 'trHeight')[0];
+      if (trH) {
+        const rule = trH.getAttributeNS(W, 'hRule');
+        const val = parseInt(trH.getAttributeNS(W, 'val') || '0');
+        if (rule === 'atLeast' || val > 200) {
+          trH.setAttributeNS(W, 'w:val', '0');
+          trH.removeAttributeNS(W, 'hRule');
+          changed = true;
         }
       }
     }
 
-    // Get text length from all runs
-    let textLen = 0;
-    for (const t of p.getElementsByTagNameNS(W, 't')) {
-      textLen += (t.textContent || '').length;
+    // Add compact cell margins (top/bottom = 60 twips)
+    for (const tc of doc.getElementsByTagNameNS(W, 'tc')) {
+      let tcPr = tc.getElementsByTagNameNS(W, 'tcPr')[0];
+      if (!tcPr) continue;
+      let tcMar = tcPr.getElementsByTagNameNS(W, 'tcMar')[0];
+      if (!tcMar) {
+        tcMar = doc.createElementNS(W, 'w:tcMar');
+        tcPr.appendChild(tcMar);
+      }
+      for (const side of ['top', 'bottom']) {
+        let el = tcMar.getElementsByTagNameNS(W, side)[0];
+        if (!el) {
+          el = doc.createElementNS(W, 'w:' + side);
+          tcMar.appendChild(el);
+        }
+        el.setAttributeNS(W, 'w:w', '60');
+        el.setAttributeNS(W, 'w:type', 'dxa');
+      }
+      changed = true;
+    }
+    if (changed) applied.push('Compact table rows');
+  });
+
+  // --- 3. Tighten paragraph spacing ---
+  await transformAllXml(zip, (doc) => {
+    for (const p of doc.getElementsByTagNameNS(W, 'p')) {
+      let pPr = p.getElementsByTagNameNS(W, 'pPr')[0];
+      if (!pPr) continue;
+
+      let sp = pPr.getElementsByTagNameNS(W, 'spacing')[0];
+      if (!sp) continue;
+
+      // Reduce before-spacing
+      const before = sp.getAttributeNS(W, 'before');
+      if (before) {
+        const val = parseInt(before);
+        if (val > 0) {
+          sp.setAttributeNS(W, 'w:before', String(Math.round(val * 0.5)));
+        }
+      }
+
+      // Reduce after-spacing (only if explicitly set and > 0)
+      const after = sp.getAttributeNS(W, 'after');
+      if (after) {
+        const val = parseInt(after);
+        if (val > 100) {
+          sp.setAttributeNS(W, 'w:after', String(Math.round(val * 0.7)));
+        }
+      }
+
+      // Reduce line spacing only if above single (240)
+      const line = sp.getAttributeNS(W, 'line');
+      if (line) {
+        const val = parseInt(line);
+        if (val > 260) {
+          sp.setAttributeNS(W, 'w:line', String(Math.max(240, val - 36)));
+          sp.setAttributeNS(W, 'w:lineRule', 'auto');
+        }
+      }
+    }
+  });
+  applied.push('Tighten paragraph spacing');
+
+  // --- 4. Optimize margins: top → 0 when header exists (biggest win) ---
+  await transformDocXml(zip, (doc) => {
+    const hasHeader = doc.getElementsByTagNameNS(W, 'headerReference').length > 0;
+    const hasFooter = doc.getElementsByTagNameNS(W, 'footerReference').length > 0;
+    let changed = false;
+
+    for (const m of doc.getElementsByTagNameNS(W, 'pgMar')) {
+      // When there's a header, set top margin to 0 and header distance to 720
+      // The header image/content provides visual spacing
+      if (hasHeader) {
+        const top = parseInt(m.getAttributeNS(W, 'top') || '0');
+        if (top > 0) {
+          m.setAttributeNS(W, 'w:top', '0');
+          m.setAttributeNS(W, 'w:header', '720');
+          changed = true;
+        }
+      }
+
+      // Bottom margin: keep reasonable but can tighten
+      if (!hasFooter) {
+        const bot = parseInt(m.getAttributeNS(W, 'bottom') || '0');
+        if (bot > 450) {
+          m.setAttributeNS(W, 'w:bottom', '450');
+          changed = true;
+        }
+      }
+    }
+    if (changed) applied.push('Optimize margins');
+  });
+
+  // --- 5. Scale images in document body (not headers) by 5% ---
+  {
+    const docXml = await zip.file('word/document.xml').async('string');
+    const doc = new DOMParser().parseFromString(docXml, 'application/xml');
+    let hasImages = false;
+
+    for (const ns of [WP, WP14]) {
+      for (const ext of doc.getElementsByTagNameNS(ns, 'extent')) {
+        const cx = ext.getAttribute('cx');
+        const cy = ext.getAttribute('cy');
+        if (cx) { ext.setAttribute('cx', String(Math.round(parseInt(cx) * 0.95))); hasImages = true; }
+        if (cy) ext.setAttribute('cy', String(Math.round(parseInt(cy) * 0.95)));
+      }
     }
 
-    // Estimate character width (~55% of font size for proportional fonts)
-    const charWidthTwips = fontSize * 0.55;
-    const charsPerLine = Math.max(1, Math.floor(usableWidth / charWidthTwips));
-    const numLines = Math.max(1, Math.ceil(textLen / charsPerLine) || 1);
-
-    // Line height: for lineRule="auto", line value is in 240ths of a line
-    const lineHeightTwips = (lineSpacing / 240) * fontSize * 10;
-    const paraHeight = spaceBefore + (numLines * lineHeightTwips) + spaceAfter;
-    totalHeight += paraHeight;
-  }
-
-  // Count table rows
-  const rows = doc.getElementsByTagNameNS(W, 'tr');
-  totalHeight += rows.length * 400;
-
-  // Count image heights (EMU to twips: 1 twip = 914.4 EMU)
-  for (const ns of [WP, WP14]) {
-    for (const ext of doc.getElementsByTagNameNS(ns, 'extent')) {
-      const cy = ext.getAttribute('cy');
-      if (cy) totalHeight += parseInt(cy) / 914.4;
+    for (const xfrm of doc.getElementsByTagNameNS(A, 'xfrm')) {
+      const ext = xfrm.getElementsByTagNameNS(A, 'ext')[0];
+      if (ext) {
+        const cx = ext.getAttribute('cx');
+        const cy = ext.getAttribute('cy');
+        if (cx) ext.setAttribute('cx', String(Math.round(parseInt(cx) * 0.95)));
+        if (cy) ext.setAttribute('cy', String(Math.round(parseInt(cy) * 0.95)));
+      }
     }
+
+    zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
+    if (hasImages) applied.push('Scale images (5%)');
   }
 
-  const estimatedPages = Math.max(1, Math.ceil(totalHeight / usableHeight));
+  return applied;
+}
 
-  // Use ratio approach as a sanity check:
-  // We know the original page count, so scale the estimate proportionally
-  if (originalPages > 1 && estimatedPages > 0) {
-    return estimatedPages;
+// --- Helpers ---
+
+async function transformDocXml(zip, fn) {
+  const xml = await zip.file('word/document.xml').async('string');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  fn(doc);
+  zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
+}
+
+async function transformAllXml(zip, fn) {
+  for (const name of Object.keys(zip.files)) {
+    if (!/^word\/(document|header\d*|footer\d*)\.xml$/.test(name)) continue;
+    const xml = await zip.file(name).async('string');
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    fn(doc);
+    zip.file(name, new XMLSerializer().serializeToString(doc));
   }
-  return estimatedPages;
+}
+
+async function generateBlob(zip) {
+  return zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+}
+
+function showSmartResult(original, target, applied) {
+  const base = currentFile.name.replace(/\.docx$/i, '');
+  resultName = base + '_minimized.docx';
+
+  const expandTarget = original % 2 === 0 ? original : original + 1;
+  const techList = applied.map(t => `<span class="tech-badge">${esc(t)}</span>`).join(' ');
+
+  $('status').innerHTML = `<div class="result success">
+    <div class="result-title">Minimized — ${applied.length} technique${applied.length > 1 ? 's' : ''} applied</div>
+    <div class="result-pages">
+      <span class="page-badge">${original} pp</span>
+      <span class="arrow">&rarr;</span>
+      <span class="page-badge">${target} pp (target)</span>
+    </div>
+    <div class="result-detail">Open the file in Word to verify — all content is preserved.</div>
+    <div class="tech-list">${techList}</div>
+  </div>`;
+  $('resultArea').innerHTML = `<button class="btn-download" id="downloadBtn">&#8595; Download ${esc(resultName)}</button>`;
+  $('downloadBtn').addEventListener('click', doDownload);
 }
 
 async function expandToEven(original, expandTarget) {
@@ -304,9 +322,6 @@ async function expandToEven(original, expandTarget) {
   try {
     const buf = await currentFile.arrayBuffer();
     const zip = await JSZip.loadAsync(buf);
-
-    // Apply gentle increase: widen line spacing and add paragraph spacing
-    const EXPAND = { lineVal: 300, spaceFactor: 1.3, marginReduce: -200 };
 
     for (const name of Object.keys(zip.files)) {
       if (!/^word\/(document|header\d*|footer\d*)\.xml$/.test(name)) continue;
@@ -319,16 +334,16 @@ async function expandToEven(original, expandTarget) {
           sp = doc.createElementNS(W, 'w:spacing');
           pPr.appendChild(sp);
         }
-        sp.setAttributeNS(W, 'w:line', String(EXPAND.lineVal));
+        sp.setAttributeNS(W, 'w:line', '300');
         sp.setAttributeNS(W, 'w:lineRule', 'auto');
 
         const before = sp.getAttributeNS(W, 'before');
         if (before && parseInt(before) > 0) {
-          sp.setAttributeNS(W, 'w:before', String(Math.round(parseInt(before) * EXPAND.spaceFactor)));
+          sp.setAttributeNS(W, 'w:before', String(Math.round(parseInt(before) * 1.3)));
         }
         const after = sp.getAttributeNS(W, 'after');
         if (after && parseInt(after) > 0) {
-          sp.setAttributeNS(W, 'w:after', String(Math.round(parseInt(after) * EXPAND.spaceFactor)));
+          sp.setAttributeNS(W, 'w:after', String(Math.round(parseInt(after) * 1.3)));
         }
       }
 
@@ -369,143 +384,6 @@ function doDownload() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
-}
-
-async function generateBlob(zip) {
-  return zip.generateAsync({
-    type: 'blob',
-    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  });
-}
-
-async function applyReduction(zip, cfg) {
-  for (const name of Object.keys(zip.files)) {
-    if (!/^word\/(document|header\d*|footer\d*)\.xml$/.test(name)) continue;
-    let xml = await zip.file(name).async('string');
-    xml = adjustSpacing(xml, cfg);
-    if (cfg.narrow) {
-      xml = setNarrowMargins(xml);
-    }
-    if (cfg.imgScale && cfg.imgScale < 1.0) {
-      xml = scaleImages(xml, cfg.imgScale);
-    }
-    zip.file(name, xml);
-  }
-}
-
-function scaleImages(xml, scale) {
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-
-  // Scale <wp:extent> on both inline and anchor drawings
-  for (const ns of [WP, WP14]) {
-    for (const ext of doc.getElementsByTagNameNS(ns, 'extent')) {
-      const cx = ext.getAttribute('cx');
-      const cy = ext.getAttribute('cy');
-      if (cx) ext.setAttribute('cx', String(Math.round(parseInt(cx) * scale)));
-      if (cy) ext.setAttribute('cy', String(Math.round(parseInt(cy) * scale)));
-    }
-  }
-
-  // Also scale <wp:inline> or <wp:anchor> effectExtent is optional but extent is key
-  // Scale <a:ext> inside <a:xfrm> for the actual shape
-  const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
-  for (const xfrm of doc.getElementsByTagNameNS(A, 'xfrm')) {
-    const ext = xfrm.getElementsByTagNameNS(A, 'ext')[0];
-    if (ext) {
-      const cx = ext.getAttribute('cx');
-      const cy = ext.getAttribute('cy');
-      if (cx) ext.setAttribute('cx', String(Math.round(parseInt(cx) * scale)));
-      if (cy) ext.setAttribute('cy', String(Math.round(parseInt(cy) * scale)));
-    }
-  }
-
-  return new XMLSerializer().serializeToString(doc);
-}
-
-function adjustSpacing(xml, cfg) {
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-
-  // Remove empty paragraphs (no text, no images, no other content)
-  const toRemove = [];
-  for (const p of doc.getElementsByTagNameNS(W, 'p')) {
-    const hasText = Array.from(p.getElementsByTagNameNS(W, 't')).some(t => t.textContent.trim());
-    const hasDrawing = p.getElementsByTagNameNS(W, 'drawing').length > 0;
-    const hasBreak = p.getElementsByTagNameNS(W, 'br').length > 0;
-    // Keep paragraphs inside table cells (they define the cell even if empty)
-    let inTable = false;
-    let node = p.parentNode;
-    while (node) { if (node.localName === 'tc') { inTable = true; break; } node = node.parentNode; }
-    // Keep section break paragraphs
-    const pPr = p.getElementsByTagNameNS(W, 'pPr')[0];
-    const hasSectPr = pPr && pPr.getElementsByTagNameNS(W, 'sectPr').length > 0;
-
-    if (!hasText && !hasDrawing && !hasBreak && !inTable && !hasSectPr) {
-      toRemove.push(p);
-    }
-  }
-  for (const p of toRemove) {
-    p.parentNode.removeChild(p);
-  }
-
-  const allParagraphs = doc.getElementsByTagNameNS(W, 'p');
-  for (const p of allParagraphs) {
-    let pPr = p.getElementsByTagNameNS(W, 'pPr')[0];
-    if (!pPr) {
-      pPr = doc.createElementNS(W, 'w:pPr');
-      p.insertBefore(pPr, p.firstChild);
-    }
-
-    let sp = pPr.getElementsByTagNameNS(W, 'spacing')[0];
-    if (!sp) {
-      sp = doc.createElementNS(W, 'w:spacing');
-      pPr.appendChild(sp);
-    }
-
-    sp.setAttributeNS(W, 'w:line', String(cfg.lineVal));
-    sp.setAttributeNS(W, 'w:lineRule', 'auto');
-
-    // Word defaults: before=0, after=160 (8pt), line=276 (1.15)
-    // If not set explicitly, apply reduction to the default
-    const before = sp.getAttributeNS(W, 'before');
-    const beforeVal = (before && parseInt(before) > 0) ? parseInt(before) : 0;
-    sp.setAttributeNS(W, 'w:before', String(Math.round(beforeVal * cfg.spaceFactor)));
-
-    const after = sp.getAttributeNS(W, 'after');
-    const afterVal = (after && parseInt(after) > 0) ? parseInt(after) : 160;
-    sp.setAttributeNS(W, 'w:after', String(Math.round(afterVal * cfg.spaceFactor)));
-  }
-  return new XMLSerializer().serializeToString(doc);
-}
-
-function setNarrowMargins(xml) {
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const NARROW = 720; // 1.27cm in twips — Word's "Narrow" preset
-
-  // Find the largest negative table indent so we don't push tables off-page
-  let maxNegIndent = 0;
-  for (const ind of doc.getElementsByTagNameNS(W, 'tblInd')) {
-    const val = parseFloat(ind.getAttributeNS(W, 'w') || '0');
-    if (val < 0) maxNegIndent = Math.max(maxNegIndent, Math.abs(val));
-  }
-
-  for (const m of doc.getElementsByTagNameNS(W, 'pgMar')) {
-    for (const side of ['top', 'bottom', 'left', 'right']) {
-      const current = m.getAttributeNS(W, side);
-      if (!current) continue;
-      const curVal = parseInt(current);
-
-      // For left/right: don't go below the negative table indent + a small buffer
-      let minMargin = NARROW;
-      if ((side === 'left' || side === 'right') && maxNegIndent > 0) {
-        minMargin = Math.max(NARROW, maxNegIndent + 100);
-      }
-
-      if (curVal > minMargin) {
-        m.setAttributeNS(W, 'w:' + side, String(minMargin));
-      }
-    }
-  }
-  return new XMLSerializer().serializeToString(doc);
 }
 
 function fmtSize(b) {

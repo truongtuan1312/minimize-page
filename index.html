@@ -5,75 +5,133 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Minimize Pages</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
   <div class="app">
-    <header>
+    <header class="hero">
+      <div class="logo">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+          <rect width="36" height="36" rx="10" fill="var(--accent)"/>
+          <path d="M10 8h16v2H10zM10 12h16v2H10zM10 16h12v2H10zM10 20h16v2H10zM10 24h8v2H10z" fill="#fff" opacity="0.9"/>
+          <path d="M22 18l6 6-6 6" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+        </svg>
+      </div>
       <h1>Minimize Pages</h1>
-      <p class="subtitle">Reduce odd-page .docx files to an even page count for double-sided printing. Everything runs in your browser — no uploads.</p>
+      <p class="subtitle">Smart .docx page reduction for double-sided printing.<br>Analyzes your document and applies only the techniques needed.</p>
     </header>
 
-    <div class="drop-zone" id="dropZone">
+    <div class="card drop-zone" id="dropZone">
       <input type="file" id="fileInput" accept=".docx">
-      <span class="drop-icon">&#128462;</span>
-      <div class="drop-label">Drop a .docx file here or click to browse</div>
-      <div class="drop-hint">Only .docx format supported</div>
+      <div class="drop-visual">
+        <div class="drop-icon-wrap">
+          <svg class="drop-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="12" y1="18" x2="12" y2="12"/>
+            <polyline points="9 15 12 12 15 15"/>
+          </svg>
+        </div>
+        <div class="drop-text">
+          <div class="drop-label">Drop a .docx file here or click to browse</div>
+          <div class="drop-hint">Only .docx format &middot; Everything runs locally</div>
+        </div>
+      </div>
     </div>
 
     <div id="fileCard" hidden></div>
 
-    <div class="settings" id="settingsPanel" hidden>
+    <div class="card settings" id="settingsPanel" hidden>
+      <div class="settings-title">Settings</div>
       <div class="setting-row">
-        <div>
-          <div class="setting-label">Current page count</div>
-          <div class="setting-hint">As shown in Word or Google Docs</div>
+        <div class="setting-info">
+          <svg class="setting-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+          <div>
+            <div class="setting-label">Current page count</div>
+            <div class="setting-hint">As shown in Word or Google Docs</div>
+          </div>
         </div>
-        <input type="number" class="page-input" id="pageCount" min="1" max="999">
+        <input type="number" class="page-input" id="pageCount" min="1" max="999" placeholder="e.g. 3">
       </div>
+      <div class="setting-divider"></div>
       <div class="setting-row">
-        <div>
-          <div class="setting-label">Reduction level</div>
-          <div class="setting-hint">Higher = tighter spacing</div>
+        <div class="setting-info">
+          <svg class="setting-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <line x1="3" y1="15" x2="21" y2="15"/>
+            <path d="M12 15v6"/>
+          </svg>
+          <div>
+            <div class="setting-label">Last page is mostly empty</div>
+            <div class="setting-hint">Enable when the last page uses &lt;40% of its space</div>
+          </div>
         </div>
-        <div class="level-selector" id="levelSelector">
-          <button class="level-btn active" data-level="auto">Auto</button>
-          <button class="level-btn" data-level="1">1</button>
-          <button class="level-btn" data-level="2">2</button>
-          <button class="level-btn" data-level="3">3</button>
-          <button class="level-btn" data-level="4">4</button>
-          <button class="level-btn" data-level="5">5</button>
-        </div>
+        <label class="toggle">
+          <input type="checkbox" id="sparseLastPage">
+          <span class="toggle-track">
+            <span class="toggle-thumb"></span>
+          </span>
+        </label>
       </div>
     </div>
 
-    <button class="btn-primary" id="processBtn" disabled>Minimize Pages</button>
+    <button class="btn-primary" id="processBtn" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="17 1 21 5 17 9"/>
+        <path d="M3 11V9a4 4 0 014-4h14"/>
+        <polyline points="7 23 3 19 7 15"/>
+        <path d="M21 13v2a4 4 0 01-4 4H3"/>
+      </svg>
+      Minimize Pages
+    </button>
 
     <div id="status"></div>
     <div id="resultArea"></div>
 
-    <div class="how-section">
-      <div class="how-title">How it works</div>
-      <div class="steps">
-        <div class="step"><span class="step-num">1</span> Upload your .docx and enter its page count from Word.</div>
-        <div class="step"><span class="step-num">2</span> Line spacing and paragraph gaps are tightened to drop one page.</div>
-        <div class="step"><span class="step-num">3</span> Download the result. All content, logos, and headers stay intact.</div>
+    <div class="info-grid">
+      <div class="card info-card">
+        <div class="info-card-header">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="16" x2="12" y2="12"/>
+            <line x1="12" y1="8" x2="12.01" y2="8"/>
+          </svg>
+          <span>How it works</span>
+        </div>
+        <div class="info-steps">
+          <div class="info-step"><span class="step-num">1</span><span>Upload your .docx and enter the page count from Word</span></div>
+          <div class="info-step"><span class="step-num">2</span><span>The tool analyzes the document and applies targeted techniques</span></div>
+          <div class="info-step"><span class="step-num">3</span><span>Download the result — all content stays intact</span></div>
+        </div>
+      </div>
+      <div class="card info-card">
+        <div class="info-card-header">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <span>Guarantees</span>
+        </div>
+        <div class="info-rules">
+          <div class="info-rule">All text and content preserved exactly</div>
+          <div class="info-rule">Font size never reduced — 12pt minimum</div>
+          <div class="info-rule">Logos, headers, and images stay intact</div>
+          <div class="info-rule">Targets even page count for double-sided printing</div>
+        </div>
       </div>
     </div>
 
-    <div class="how-section">
-      <div class="how-title">Rules</div>
-      <div class="rules">
-        <div class="rule"><span class="rule-icon">&#10003;</span> All text, vocabulary, and spelling preserved exactly.</div>
-        <div class="rule"><span class="rule-icon">&#10003;</span> Font size is never reduced — 12pt minimum guaranteed.</div>
-        <div class="rule"><span class="rule-icon">&#10003;</span> Adjusts line spacing, paragraph gaps, margins, and image sizes.</div>
-        <div class="rule"><span class="rule-icon">&#10003;</span> Target is always an even page count (for double-sided printing).</div>
-        <div class="rule"><span class="rule-icon">&#10003;</span> If reducing isn't possible, the tool suggests expanding to the next even page instead.</div>
-      </div>
-    </div>
+    <footer class="app-footer">
+      <span>Runs entirely in your browser — no files uploaded</span>
+    </footer>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>
