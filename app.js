@@ -127,23 +127,59 @@ async function smartMinimize(zip, currentPages, targetPages) {
     }
   });
 
-  // --- 2. Compact table rows: remove atLeast heights, set to auto-fit ---
+  // --- 2. Compact table rows & scale images to fit cells ---
   await transformDocXml(zip, (doc) => {
     let changed = false;
-    for (const trPr of doc.getElementsByTagNameNS(W, 'trPr')) {
-      const trH = trPr.getElementsByTagNameNS(W, 'trHeight')[0];
-      if (trH) {
-        const rule = trH.getAttributeNS(W, 'hRule');
-        const val = parseInt(trH.getAttributeNS(W, 'val') || '0');
-        if (rule === 'atLeast' || val > 200) {
-          trH.setAttributeNS(W, 'w:val', '0');
-          trH.removeAttributeNS(W, 'hRule');
-          changed = true;
+    const TEXT_ROW_H = 288;  // 0.2 inch in twips
+    const IMG_ROW_H = 1080;  // 0.75 inch in twips
+    const IMG_MAX_EMU = 685800; // 0.75 inch in EMU
+
+    for (const tr of doc.getElementsByTagNameNS(W, 'tr')) {
+      const hasImg = tr.getElementsByTagNameNS(W, 'drawing').length > 0;
+      const maxH = hasImg ? IMG_ROW_H : TEXT_ROW_H;
+
+      let trPr = tr.getElementsByTagNameNS(W, 'trPr')[0];
+      if (!trPr) {
+        trPr = doc.createElementNS(W, 'w:trPr');
+        tr.insertBefore(trPr, tr.firstChild);
+      }
+      let trH = trPr.getElementsByTagNameNS(W, 'trHeight')[0];
+      if (!trH) {
+        trH = doc.createElementNS(W, 'w:trHeight');
+        trPr.appendChild(trH);
+      }
+      trH.setAttributeNS(W, 'w:val', String(maxH));
+      trH.setAttributeNS(W, 'w:hRule', 'atLeast');
+      changed = true;
+
+      if (hasImg) {
+        for (const ns of [WP, WP14]) {
+          for (const ext of tr.getElementsByTagNameNS(ns, 'extent')) {
+            const cx = parseInt(ext.getAttribute('cx') || '0');
+            const cy = parseInt(ext.getAttribute('cy') || '0');
+            if (cy > IMG_MAX_EMU) {
+              const scale = IMG_MAX_EMU / cy;
+              ext.setAttribute('cy', String(IMG_MAX_EMU));
+              if (cx) ext.setAttribute('cx', String(Math.round(cx * scale)));
+            }
+          }
+        }
+        for (const xfrm of tr.getElementsByTagNameNS(A, 'xfrm')) {
+          const ext = xfrm.getElementsByTagNameNS(A, 'ext')[0];
+          if (ext) {
+            const cx = parseInt(ext.getAttribute('cx') || '0');
+            const cy = parseInt(ext.getAttribute('cy') || '0');
+            if (cy > IMG_MAX_EMU) {
+              const scale = IMG_MAX_EMU / cy;
+              ext.setAttribute('cy', String(IMG_MAX_EMU));
+              if (cx) ext.setAttribute('cx', String(Math.round(cx * scale)));
+            }
+          }
         }
       }
     }
 
-    // Add compact cell margins (top/bottom = 60 twips)
+    // Compact cell margins
     for (const tc of doc.getElementsByTagNameNS(W, 'tc')) {
       let tcPr = tc.getElementsByTagNameNS(W, 'tcPr')[0];
       if (!tcPr) continue;
@@ -158,7 +194,7 @@ async function smartMinimize(zip, currentPages, targetPages) {
           el = doc.createElementNS(W, 'w:' + side);
           tcMar.appendChild(el);
         }
-        el.setAttributeNS(W, 'w:w', '60');
+        el.setAttributeNS(W, 'w:w', '0');
         el.setAttributeNS(W, 'w:type', 'dxa');
       }
       changed = true;
@@ -166,7 +202,26 @@ async function smartMinimize(zip, currentPages, targetPages) {
     if (changed) applied.push('Compact table rows');
   });
 
-  // --- 3. Tighten paragraph spacing ---
+  // --- 3. Cap font sizes: max 18pt, scale others proportionally ---
+  await transformAllXml(zip, (doc) => {
+    const MAX_HP = 36; // 18pt in half-points
+    let maxFound = 0;
+    const szEls = [...doc.getElementsByTagNameNS(W, 'sz'), ...doc.getElementsByTagNameNS(W, 'szCs')];
+    for (const sz of szEls) {
+      const v = parseInt(sz.getAttributeNS(W, 'val') || '0');
+      if (v > maxFound) maxFound = v;
+    }
+    if (maxFound > MAX_HP) {
+      const scale = MAX_HP / maxFound;
+      for (const sz of szEls) {
+        const v = parseInt(sz.getAttributeNS(W, 'val') || '0');
+        if (v > 0) sz.setAttributeNS(W, 'w:val', String(Math.max(1, Math.round(v * scale))));
+      }
+      applied.push(`Cap fonts (${maxFound / 2}pt → ${MAX_HP / 2}pt)`);
+    }
+  });
+
+  // --- 4. Tighten paragraph spacing ---
   await transformAllXml(zip, (doc) => {
     for (const p of doc.getElementsByTagNameNS(W, 'p')) {
       let pPr = p.getElementsByTagNameNS(W, 'pPr')[0];
@@ -245,28 +300,37 @@ async function smartMinimize(zip, currentPages, targetPages) {
     const doc = new DOMParser().parseFromString(docXml, 'application/xml');
     let hasImages = false;
 
+    function isInsideTable(node) {
+      let n = node.parentNode;
+      while (n) { if (n.localName === 'tc') return true; n = n.parentNode; }
+      return false;
+    }
+
     for (const ns of [WP, WP14]) {
       for (const ext of doc.getElementsByTagNameNS(ns, 'extent')) {
-        const cx = ext.getAttribute('cx');
-        const cy = ext.getAttribute('cy');
-        if (cx) { ext.setAttribute('cx', String(Math.round(parseInt(cx) * imgScale))); hasImages = true; }
-        if (cy) ext.setAttribute('cy', String(Math.round(parseInt(cy) * imgScale)));
+        if (isInsideTable(ext)) continue;
+        const cx = parseInt(ext.getAttribute('cx') || '0');
+        const cy = parseInt(ext.getAttribute('cy') || '0');
+        if (cx) { ext.setAttribute('cx', String(Math.round(cx * imgScale))); hasImages = true; }
+        if (cy) ext.setAttribute('cy', String(Math.round(cy * imgScale)));
       }
     }
 
     for (const xfrm of doc.getElementsByTagNameNS(A, 'xfrm')) {
+      if (isInsideTable(xfrm)) continue;
       const ext = xfrm.getElementsByTagNameNS(A, 'ext')[0];
       if (ext) {
-        const cx = ext.getAttribute('cx');
-        const cy = ext.getAttribute('cy');
-        if (cx) ext.setAttribute('cx', String(Math.round(parseInt(cx) * imgScale)));
-        if (cy) ext.setAttribute('cy', String(Math.round(parseInt(cy) * imgScale)));
+        const cx = parseInt(ext.getAttribute('cx') || '0');
+        const cy = parseInt(ext.getAttribute('cy') || '0');
+        if (cx) ext.setAttribute('cx', String(Math.round(cx * imgScale)));
+        if (cy) ext.setAttribute('cy', String(Math.round(cy * imgScale)));
       }
     }
 
     zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
     if (hasImages) applied.push(`Scale images (${Math.round((1 - imgScale) * 100)}%)`);
   }
+
 
   return applied;
 }
