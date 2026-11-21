@@ -3,132 +3,234 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Minimize Pages</title>
+  <title>Worksheet Minimizer</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <div class="app">
-    <header class="hero">
-      <div class="logo">
-        <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-          <rect width="36" height="36" rx="10" fill="var(--accent)"/>
+    <header class="topbar">
+      <div class="brand">
+        <svg width="28" height="28" viewBox="0 0 36 36" fill="none">
+          <rect width="36" height="36" rx="9" fill="var(--accent)"/>
           <path d="M10 8h16v2H10zM10 12h16v2H10zM10 16h12v2H10zM10 20h16v2H10zM10 24h8v2H10z" fill="#fff" opacity="0.9"/>
-          <path d="M22 18l6 6-6 6" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
         </svg>
+        <div>
+          <h1>Worksheet Minimizer</h1>
+          <p class="tagline">Fit your reminders onto fewer pages — without breaking the layout.</p>
+        </div>
       </div>
-      <h1>Minimize Pages</h1>
-      <p class="subtitle">Smart .docx page reduction for double-sided printing.<br>Analyzes your document and applies only the techniques needed.</p>
     </header>
 
-    <div class="card drop-zone" id="dropZone">
-      <input type="file" id="fileInput" accept=".docx">
-      <div class="drop-visual">
-        <div class="drop-icon-wrap">
-          <svg class="drop-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="12" y1="18" x2="12" y2="12"/>
-            <polyline points="9 15 12 12 15 15"/>
-          </svg>
-        </div>
-        <div class="drop-text">
-          <div class="drop-label">Drop a .docx file here or click to browse</div>
-          <div class="drop-hint">Only .docx format &middot; Everything runs locally</div>
-        </div>
-      </div>
-    </div>
+    <div class="workspace">
 
-    <div id="fileCard" hidden></div>
-
-    <div class="card settings" id="settingsPanel" hidden>
-      <div class="settings-title">Settings</div>
-      <div class="setting-row">
-        <div class="setting-info">
-          <svg class="setting-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="16" y1="13" x2="8" y2="13"/>
-            <line x1="16" y1="17" x2="8" y2="17"/>
-          </svg>
-          <div>
-            <div class="setting-label">Current page count</div>
-            <div class="setting-hint">As shown in Word or Google Docs</div>
+      <!-- LEFT: file + document analysis -->
+      <aside class="col-left">
+        <div class="card drop-zone" id="dropZone">
+          <input type="file" id="fileInput" accept=".docx">
+          <div class="drop-visual">
+            <div class="drop-icon-wrap">
+              <svg class="drop-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="12" y1="18" x2="12" y2="12"/>
+                <polyline points="9 15 12 12 15 15"/>
+              </svg>
+            </div>
+            <div class="drop-text">
+              <div class="drop-label">Drop a .docx here</div>
+              <div class="drop-hint">or click to browse &middot; runs locally</div>
+            </div>
           </div>
         </div>
-        <input type="number" class="page-input" id="pageCount" min="1" max="999" placeholder="e.g. 3">
-      </div>
-      <div class="setting-divider"></div>
-      <div class="setting-row">
-        <div class="setting-info">
-          <svg class="setting-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <line x1="3" y1="15" x2="21" y2="15"/>
-            <path d="M12 15v6"/>
-          </svg>
-          <div>
-            <div class="setting-label">Last page is mostly empty</div>
-            <div class="setting-hint">Enable when the last page uses &lt;40% of its space</div>
+
+        <div id="fileCard" hidden></div>
+
+        <div class="card scan" id="scanPanel" hidden>
+          <div class="panel-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            What's in this file
+          </div>
+          <dl class="scan-grid" id="scanGrid"></dl>
+          <div class="scan-note" id="scanNote"></div>
+        </div>
+      </aside>
+
+      <!-- RIGHT: controls -->
+      <main class="col-right">
+
+        <div class="card pages-card">
+          <div class="pages-row">
+            <div class="pages-field">
+              <span class="field-label">Now</span>
+              <output class="page-detected" id="pageDetected">—</output>
+              <div class="field-hint" id="detectedHint">Load a file</div>
+            </div>
+
+            <div class="pages-arrow">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+              </svg>
+            </div>
+
+            <div class="pages-field">
+              <span class="field-label">You want</span>
+              <div class="stepper">
+                <button type="button" id="tgtDown" aria-label="One page fewer">&minus;</button>
+                <output class="page-target" id="pageTarget">—</output>
+                <button type="button" id="tgtUp" aria-label="One page more">+</button>
+              </div>
+              <div class="field-hint" id="targetHint">pages</div>
+            </div>
+          </div>
+
+          <div class="mode-line" id="modeLine" hidden></div>
+
+          <div class="manual-row" id="manualRow" hidden>
+            <label for="pageCount">Real count in Word - enter the number if it's wrong</label>
+            <input type="number" id="pageCount" min="1" max="999">
           </div>
         </div>
-        <label class="toggle">
-          <input type="checkbox" id="sparseLastPage">
-          <span class="toggle-track">
-            <span class="toggle-thumb"></span>
-          </span>
-        </label>
-      </div>
-    </div>
 
-    <button class="btn-primary" id="processBtn" disabled>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="17 1 21 5 17 9"/>
-        <path d="M3 11V9a4 4 0 014-4h14"/>
-        <polyline points="7 23 3 19 7 15"/>
-        <path d="M21 13v2a4 4 0 01-4 4H3"/>
-      </svg>
-      Minimize Pages
-    </button>
+        <div class="card rules" id="rulesWrap">
+          <div class="panel-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>
+              <line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>
+              <line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
+            </svg>
+            Rules
+            <button class="link-btn" id="resetRules" type="button">Reset</button>
+          </div>
 
-    <div id="status"></div>
-    <div id="resultArea"></div>
+          <div class="rule" data-rule="fonts">
+            <label class="toggle">
+              <input type="checkbox" id="ruleFonts" checked>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <div class="rule-body">
+              <div class="rule-name">Cap font size</div>
+              <div class="rule-desc">Largest font drops to the cap; the rest scale by the same ratio.</div>
+            </div>
+            <div class="rule-value">
+              <input type="number" id="maxFont" value="18" min="8" max="72" step="1">
+              <span class="unit">pt</span>
+            </div>
+          </div>
 
-    <div class="info-grid">
-      <div class="card info-card">
-        <div class="info-card-header">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="12" y1="16" x2="12" y2="12"/>
-            <line x1="12" y1="8" x2="12.01" y2="8"/>
+          <div class="rule" data-rule="imgRow">
+            <label class="toggle">
+              <input type="checkbox" id="ruleImgRow" checked>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <div class="rule-body">
+              <div class="rule-name">Picture cell height</div>
+              <div class="rule-desc">Rows holding pictures, and the pictures inside them.</div>
+            </div>
+            <div class="rule-value">
+              <input type="number" id="imgRowH" value="0.75" min="0.2" max="4" step="0.05">
+              <span class="unit">in</span>
+            </div>
+          </div>
+
+          <div class="rule" data-rule="textRow">
+            <label class="toggle">
+              <input type="checkbox" id="ruleTextRow" checked>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <div class="rule-body">
+              <div class="rule-name">Text cell height</div>
+              <div class="rule-desc">Minimum height for rows with no picture.</div>
+            </div>
+            <div class="rule-value">
+              <input type="number" id="textRowH" value="0.2" min="0.1" max="2" step="0.05">
+              <span class="unit">in</span>
+            </div>
+          </div>
+
+          <div class="rule" data-rule="spacing">
+            <label class="toggle">
+              <input type="checkbox" id="ruleSpacing" checked>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <div class="rule-body">
+              <div class="rule-name">Tighten line spacing</div>
+              <div class="rule-desc">Trims space above, below and between lines.</div>
+            </div>
+            <div class="rule-value muted">auto</div>
+          </div>
+
+          <div class="rule" data-rule="margins">
+            <label class="toggle">
+              <input type="checkbox" id="ruleMargins" checked>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <div class="rule-body">
+              <div class="rule-name">Shrink page margins</div>
+              <div class="rule-desc">Pulls the top margin up under the header image.</div>
+            </div>
+            <div class="rule-value muted">auto</div>
+          </div>
+
+          <div class="rule" data-rule="empties">
+            <label class="toggle">
+              <input type="checkbox" id="ruleEmpties" checked>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <div class="rule-body">
+              <div class="rule-name">Drop blank lines</div>
+              <div class="rule-desc">Removes empty paragraphs outside tables.</div>
+            </div>
+            <div class="rule-value muted">auto</div>
+          </div>
+
+          <div class="rule" data-rule="freeImg">
+            <label class="toggle">
+              <input type="checkbox" id="ruleFreeImg" checked>
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+            <div class="rule-body">
+              <div class="rule-name">Scale loose pictures</div>
+              <div class="rule-desc">Pictures outside tables shrink toward the page target.</div>
+            </div>
+            <div class="rule-value muted">auto</div>
+          </div>
+        </div>
+
+        <div class="card effort">
+          <div class="effort-head">
+            <span class="effort-label">Estimated space reclaimed</span>
+            <span class="effort-pct" id="effortPct">—</span>
+          </div>
+          <div class="effort-bar"><div class="effort-fill" id="effortFill"></div></div>
+          <div class="effort-note" id="effortNote">Load a file to see an estimate.</div>
+        </div>
+
+        <button class="btn-primary" id="processBtn" disabled>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="btnIcon">
+            <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
+            <line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
           </svg>
-          <span>How it works</span>
-        </div>
-        <div class="info-steps">
-          <div class="info-step"><span class="step-num">1</span><span>Upload your .docx and enter the page count from Word</span></div>
-          <div class="info-step"><span class="step-num">2</span><span>The tool analyzes the document and applies targeted techniques</span></div>
-          <div class="info-step"><span class="step-num">3</span><span>Download the result — all content stays intact</span></div>
-        </div>
-      </div>
-      <div class="card info-card">
-        <div class="info-card-header">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
-            <polyline points="22 4 12 14.01 9 11.01"/>
-          </svg>
-          <span>Guarantees</span>
-        </div>
-        <div class="info-rules">
-          <div class="info-rule">All text and content preserved exactly</div>
-          <div class="info-rule">Font size never reduced — 12pt minimum</div>
-          <div class="info-rule">Logos, headers, and images stay intact</div>
-          <div class="info-rule">Targets even page count for double-sided printing</div>
-        </div>
-      </div>
+          <span id="btnLabel">Minimize</span>
+        </button>
+
+        <div id="status"></div>
+        <div id="resultArea"></div>
+      </main>
     </div>
 
     <footer class="app-footer">
       <span>Runs entirely in your browser — no files uploaded</span>
-      <div style="margin-top:6px;opacity:0.3;font-size:11px;">Truong Thuan Tuan</div>
+      <a class="repo-link" href="https://github.com/truongtuan1312/minimize-page" target="_blank" rel="noopener noreferrer">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+        Source on GitHub
+      </a>
+      <div class="sig">Truong Thuan Tuan</div>
     </footer>
   </div>
 
